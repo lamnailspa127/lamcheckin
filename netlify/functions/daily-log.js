@@ -118,6 +118,5 @@ export default async (req) => {
 };
 
 export const config = {
-  path: "/api/daily-log",
   schedule: "@daily", // runs once every day
 };
