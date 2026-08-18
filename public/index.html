@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>LAM CHECK IN</title>
+  <style>
+    :root {
+      --bg: #ffffff; --text: #0a0a0a; --muted: #6b6b6b; --border: #e8e8e8;
+      --accent: #111111; --success: #0d9488; --key-bg: #f4f4f4; --key-active: #e0e0e0;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    body {
+      font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 32px 20px 40px; -webkit-font-smoothing: antialiased;
+    }
+    .logo { width: 160px; height: auto; margin-bottom: 24px; }
+    h1 { font-size: 26px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
+    .subtitle { color: var(--muted); font-size: 15px; margin-bottom: 36px; }
+    .phone-display {
+      width: 100%; max-width: 340px; background: #fafafa; border: 1px solid var(--border);
+      border-radius: 12px; padding: 20px; font-size: 28px; font-weight: 500; letter-spacing: 3px;
+      text-align: center; min-height: 72px; display: flex; align-items: center; justify-content: center;
+      margin-bottom: 28px; font-variant-numeric: tabular-nums;
+    }
+    .phone-display.empty { color: #ccc; letter-spacing: 1px; font-size: 18px; }
+    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 340px; margin-bottom: 24px; }
+    .key {
+      aspect-ratio: 1.4; background: var(--key-bg); border: none; border-radius: 14px;
+      font-size: 26px; font-weight: 500; color: var(--text); cursor: pointer;
+      transition: background 0.15s, transform 0.1s; display: flex; align-items: center; justify-content: center; user-select: none;
+    }
+    .key:active { background: var(--key-active); transform: scale(0.96); }
+    .key.action { font-size: 15px; font-weight: 600; }
+    .key.clear { background: #f0f0f0; color: #666; }
+    .actions { width: 100%; max-width: 340px; }
+    button.primary {
+      width: 100%; padding: 18px; font-size: 17px; font-weight: 600; letter-spacing: 0.5px;
+      border: none; border-radius: 12px; background: var(--accent); color: white; cursor: pointer;
+    }
+    button.primary:active { transform: scale(0.98); }
+    button.primary:disabled { opacity: 0.35; cursor: not-allowed; }
+    .result { width: 100%; max-width: 340px; margin-top: 28px; display: none; }
+    .result.visible { display: block; }
+    .card {
+      background: #fafafa; border: 1px solid var(--border); border-radius: 14px;
+      padding: 22px; text-align: left; margin-bottom: 14px;
+    }
+    .card h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
+    .card .detail { font-size: 15px; color: var(--text); margin-bottom: 4px; }
+    .card .detail span { color: var(--muted); }
+    .badge {
+      display: inline-block; margin-top: 12px; padding: 5px 12px; font-size: 12px;
+      font-weight: 600; border-radius: 20px; background: #e6f7f5; color: var(--success);
+    }
+    .badge.waiting { background: #f0f0f0; color: var(--muted); }
+    .message {
+      width: 100%; max-width: 340px; margin-top: 18px; padding: 14px 16px;
+      border-radius: 10px; font-size: 14px; text-align: center; display: none;
+    }
+    .message.success { background: #e6f7f5; color: #0f766e; display: block; }
+    .message.error { background: #fef2f2; color: #b91c1c; display: block; }
+    .loading { opacity: 0.55; pointer-events: none; }
+    footer { margin-top: auto; padding-top: 40px; font-size: 12px; color: #bbb; }
+  </style>
+</head>
+<body>
+  <img src="/logo.png" alt="LAM Nail Spa" class="logo" />
+  <h1>LAM CHECK IN</h1>
+  <p class="subtitle">Enter your phone number</p>
+
+  <div class="phone-display empty" id="display">Phone number</div>
+
+  <div class="keypad" id="keypad">
+    <button class="key" data-key="1">1</button>
+    <button class="key" data-key="2">2</button>
+    <button class="key" data-key="3">3</button>
+    <button class="key" data-key="4">4</button>
+    <button class="key" data-key="5">5</button>
+    <button class="key" data-key="6">6</button>
+    <button class="key" data-key="7">7</button>
+    <button class="key" data-key="8">8</button>
+    <button class="key" data-key="9">9</button>
+    <button class="key clear action" data-key="clear">Clear</button>
+    <button class="key" data-key="0">0</button>
+    <button class="key action" data-key="back">⌫</button>
+  </div>
+
+  <div class="actions">
+    <button class="primary" id="lookupBtn" onclick="lookup()" disabled>Find Appointment</button>
+  </div>
+
+  <div class="message" id="message"></div>
+  <div class="result" id="result"></div>
+  <footer>LAM Nail Spa · Est. 2023</footer>
+
+  <script>
+    const BOOKING_URL = "https://book.squareup.com/appointments/ugb6nlboeff7si/location/L5NJSKPJF80C0/services";
+    let phone = "";
+    const display = document.getElementById("display");
+    const lookupBtn = document.getElementById("lookupBtn");
+    const resultEl = document.getElementById("result");
+    const messageEl = document.getElementById("message");
+    const bodyEl = document.body;
+
+    document.getElementById("keypad").addEventListener("click", (e) => {
+      const key = e.target.closest(".key")?.dataset.key;
+      if (!key) return;
+      if (key === "clear") phone = "";
+      else if (key === "back") phone = phone.slice(0, -1);
+      else if (phone.length < 10) phone += key;
+      updateDisplay();
+    });
+
+    function updateDisplay() {
+      if (!phone) {
+        display.textContent = "Phone number";
+        display.classList.add("empty");
+        lookupBtn.disabled = true;
+      } else {
+        let formatted = phone;
+        if (phone.length > 6) formatted = `(${phone.slice(0,3)}) ${phone.slice(3,6)}-${phone.slice(6)}`;
+        else if (phone.length > 3) formatted = `(${phone.slice(0,3)}) ${phone.slice(3)}`;
+        display.textContent = formatted;
+        display.classList.remove("empty");
+        lookupBtn.disabled = phone.length < 10;
+      }
+    }
+
+    function showMessage(text, type) {
+      messageEl.textContent = text;
+      messageEl.className = "message " + type;
+    }
+    function clearMessage() {
+      messageEl.className = "message";
+      messageEl.textContent = "";
+    }
+
+    function formatTime(iso) {
+      return new Date(iso).toLocaleTimeString("en-US", {
+        timeZone: "America/Toronto",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    async function lookup() {
+      if (phone.length < 10) return;
+      clearMessage();
+      bodyEl.classList.add("loading");
+      lookupBtn.textContent = "Searching…";
+      resultEl.classList.remove("visible");
+      resultEl.innerHTML = "";
+
+      try {
+        const custRes = await fetch("/api/search-customer", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone }),
+        });
+        const custData = await custRes.json();
+        if (!custRes.ok) throw new Error(custData.error?.detail || custData.error || "Search failed");
+
+        const customers = custData.customers || [];
+        if (customers.length === 0) {
+          resultEl.innerHTML = `
+            <div class="card">
+              <h3>No appointment found</h3>
+              <p class="detail">We couldn’t find a booking for this number today.</p>
+              <button class="primary" style="margin-top:18px" onclick="window.open('${BOOKING_URL}', '_blank')">
+                Book an Appointment
+              </button>
+            </div>`;
+          resultEl.classList.add("visible");
+          return;
+        }
+
+        const customer = customers[0];
+        const name = [customer.given_name, customer.family_name].filter(Boolean).join(" ") || "Guest";
+
+        const bookRes = await fetch("/api/get-todays-bookings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ customerId: customer.id }),
+        });
+        const bookData = await bookRes.json();
+        if (!bookRes.ok) throw new Error(bookData.error?.detail || bookData.error || "Could not load bookings");
+
+        const bookings = bookData.bookings || [];
+        if (bookings.length === 0) {
+          resultEl.innerHTML = `
+            <div class="card">
+              <h3>Hi ${name}</h3>
+              <p class="detail">No appointment scheduled for today.</p>
+              <button class="primary" style="margin-top:18px" onclick="window.open('${BOOKING_URL}', '_blank')">
+                Book an Appointment
+              </button>
+            </div>`;
+          resultEl.classList.add("visible");
+          return;
+        }
+
+        let html = "";
+        bookings.forEach((b) => {
+          const time = formatTime(b.start_at);
+          const checkedIn = b.checkedIn;
+          html += `
+            <div class="card">
+              <h3>${time}</h3>
+              <p class="detail"><span>Service:</span> ${b.serviceName || "Service"}</p>
+              <p class="detail"><span>Nail Tech:</span> ${b.staffName || "Staff"}</p>
+              <p class="detail"><span>Guest:</span> ${name}</p>
+              <span class="badge ${checkedIn ? "" : "waiting"}">${checkedIn ? "Checked in" : "Ready to check in"}</span>
+              ${!checkedIn ? `<button class="primary" style="margin-top:16px" onclick="checkIn('${b.id}', ${b.version || 0})">Check In Now</button>` : ""}
+            </div>`;
+        });
+        resultEl.innerHTML = html;
+        resultEl.classList.add("visible");
+      } catch (err) {
+        showMessage(err.message || "Something went wrong", "error");
+      } finally {
+        bodyEl.classList.remove("loading");
+        lookupBtn.textContent = "Find Appointment";
+      }
+    }
+
+    async function checkIn(bookingId, version) {
+      clearMessage();
+      bodyEl.classList.add("loading");
+      try {
+        const res = await fetch("/api/check-in", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ bookingId, version }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error?.detail || data.error || "Check-in failed");
+        showMessage("You're checked in. We'll be with you shortly.", "success");
+        setTimeout(lookup, 900);
+      } catch (err) {
+        showMessage(err.message || "Check-in failed", "error");
+      } finally {
+        bodyEl.classList.remove("loading");
+      }
+    }
+  </script>
+</body>
+</html>
