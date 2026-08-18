@@ -1,5 +1,5 @@
 // Scheduled function – runs once per day
-// Sends a summary of checked-in appointments to the salon email
+// Collects yesterday’s check-ins and prepares a log (and can email it)
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -10,9 +10,11 @@ function getBaseUrl() {
     : "https://connect.squareup.com";
 }
 
-function getYesterdayRange() {
+function getYesterdayRangeToronto() {
   const now = new Date();
-  const yesterday = new Date(now);
+  // Get yesterday in Toronto timezone
+  const torontoNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Toronto" }));
+  const yesterday = new Date(torontoNow);
   yesterday.setDate(yesterday.getDate() - 1);
 
   const start = new Date(yesterday);
@@ -20,32 +22,34 @@ function getYesterdayRange() {
   const end = new Date(yesterday);
   end.setHours(23, 59, 59, 999);
 
-  return {
-    start_at_min: start.toISOString(),
-    start_at_max: end.toISOString(),
-    dateLabel: yesterday.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "long",
-      day: "numeric",
-    }),
-  };
+  // Approximate conversion back to UTC
+  const offset = now.getTime() - torontoNow.getTime();
+  const startISO = new Date(start.getTime() + offset).toISOString();
+  const endISO = new Date(end.getTime() + offset).toISOString();
+
+  const dateLabel = yesterday.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+    timeZone: "America/Toronto",
+  });
+
+  return { start_at_min: startISO, start_at_max: endISO, dateLabel };
 }
 
-export default async (req) => {
-  // Allow manual trigger too
+export default async () => {
   try {
     const token = process.env.SQUARE_ACCESS_TOKEN;
     const locationId = process.env.SQUARE_LOCATION_ID || "L5NJSKPJF80C0";
     const notifyEmail = process.env.NOTIFY_EMAIL || "lamnailspa127@gmail.com";
 
     if (!token) {
-      return new Response(JSON.stringify({ error: "Missing SQUARE_ACCESS_TOKEN" }), {
-        status: 500,
-      });
+      console.error("Missing SQUARE_ACCESS_TOKEN");
+      return;
     }
 
-    const { start_at_min, start_at_max, dateLabel } = getYesterdayRange();
+    const { start_at_min, start_at_max, dateLabel } = getYesterdayRangeToronto();
 
     const params = new URLSearchParams({
       location_id: locationId,
@@ -65,7 +69,8 @@ export default async (req) => {
 
     const data = await res.json();
     if (!res.ok) {
-      return new Response(JSON.stringify({ error: data }), { status: 500 });
+      console.error("Square API error", data);
+      return;
     }
 
     const bookings = data.bookings || [];
@@ -73,7 +78,6 @@ export default async (req) => {
       (b) => b.seller_note && b.seller_note.toLowerCase().includes("checked in")
     );
 
-    // Build simple text log
     let log = `LAM Nail Spa – Daily Check-in Log\n`;
     log += `Date: ${dateLabel}\n`;
     log += `Total appointments: ${bookings.length}\n`;
@@ -85,6 +89,7 @@ export default async (req) => {
       log += "Checked-in customers:\n";
       checkedIn.forEach((b) => {
         const time = new Date(b.start_at).toLocaleTimeString("en-US", {
+          timeZone: "America/Toronto",
           hour: "numeric",
           minute: "2-digit",
         });
@@ -94,30 +99,38 @@ export default async (req) => {
 
     log += `\n---\nGenerated automatically by LAM Check-In app`;
 
-    // For a real email we need an email service (Resend, SendGrid, etc.)
-    // Here we log it and return the content so you can see it works.
-    // To actually send email, add RESEND_API_KEY and uncomment the fetch below.
-
     console.log(log);
 
-   
-    return new Response(
-      JSON.stringify({
-        success: true,
-        date: dateLabel,
-        total: bookings.length,
-        checkedIn: checkedIn.length,
-        log,
-        note: "Email sending requires RESEND_API_KEY (see README)",
-      }),
-      { status: 200, headers: { "Content-Type": "application/json" } }
-    );
+    // Send email if Resend API key is present
+    if (process.env.RESEND_API_KEY) {
+      try {
+        const emailRes = await fetch("https://api.resend.com/emails", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            from: "LAM Check-In <onboarding@resend.dev>",
+            to: [notifyEmail],
+            subject: `LAM Check-In Log – ${dateLabel}`,
+            text: log,
+          }),
+        });
+        const emailData = await emailRes.json();
+        console.log("Email result:", emailData);
+      } catch (emailErr) {
+        console.error("Failed to send email:", emailErr);
+      }
+    } else {
+      console.log("RESEND_API_KEY not set – email not sent");
+    }
   } catch (err) {
-    return new Response(JSON.stringify({ error: err.message }), { status: 500 });
+    console.error("daily-log error:", err);
   }
 };
 
+// Scheduled functions must NOT have a custom path
 export const config = {
-  path: "/api/daily-log",
-  schedule: "@daily", // runs once every day
+  schedule: "@daily",
 };
