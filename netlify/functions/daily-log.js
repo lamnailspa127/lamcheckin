@@ -232,7 +232,7 @@ export default async () => {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "LAM Check-In <onboarding@resend.dev>",
+            from: "LAM Check-In <checkin@lamnailspa.ca>",
             to: [notifyEmail],
             subject: `LAM Check-In Log – ${dateLabel}`,
             text: log,

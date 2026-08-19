@@ -194,7 +194,7 @@ Checked in at: ${timeStr}
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            from: "LAM Check-In <onboarding@resend.dev>",
+            from: "LAM Check-In <checkin@lamnailspa.ca>",
             to: [tech.email],
             subject: `Customer checked in – ${customerName}`,
             text: emailText,
