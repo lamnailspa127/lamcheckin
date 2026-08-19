@@ -172,9 +172,16 @@ export default async (req) => {
     }
 
     const bookings = (data.bookings || []).filter((b) => {
-      // Only keep active bookings – hide cancelled and no-shows
+      // Only keep active bookings – hide all cancelled / declined / no-show
       const status = (b.status || "").toUpperCase();
-      return status !== "CANCELLED" && status !== "NO_SHOW";
+      const hidden = [
+        "CANCELLED",
+        "CANCELLED_BY_CUSTOMER",
+        "CANCELLED_BY_SELLER",
+        "DECLINED",
+        "NO_SHOW",
+      ];
+      return !hidden.includes(status);
     });
 
     // Enrich each booking with service name and staff name

@@ -156,7 +156,14 @@ export default async () => {
 
     const bookings = (data.bookings || []).filter((b) => {
       const status = (b.status || "").toUpperCase();
-      return status !== "CANCELLED" && status !== "NO_SHOW";
+      const hidden = [
+        "CANCELLED",
+        "CANCELLED_BY_CUSTOMER",
+        "CANCELLED_BY_SELLER",
+        "DECLINED",
+        "NO_SHOW",
+      ];
+      return !hidden.includes(status);
     });
     const checkedIn = bookings.filter(
       (b) => b.seller_note && b.seller_note.toLowerCase().includes("checked in")
