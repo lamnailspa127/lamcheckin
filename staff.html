@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>LAM Staff – Today</title>
+
+  <link rel="manifest" href="/staff-manifest.json">
+  <meta name="theme-color" content="#000000">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="LAM Staff">
+  <link rel="apple-touch-icon" href="/logo.png">
+  <link rel="icon" type="image/png" href="/logo.png">
+
+  <style>
+    :root {
+      --bg: #f7f7f7; --text: #0a0a0a; --muted: #6b6b6b; --border: #e5e5e5;
+      --success: #0d9488; --radius: 14px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--bg); color: var(--text); min-height: 100vh;
+      padding: 28px 16px 48px; -webkit-font-smoothing: antialiased;
+    }
+    .header {
+      max-width: 680px; margin: 0 auto 24px;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .logo-small { width: 48px; height: 48px; object-fit: contain; }
+    h1 { font-size: 20px; font-weight: 600; letter-spacing: 0.5px; }
+    .refresh {
+      font-size: 13px; font-weight: 500; color: var(--muted); background: white;
+      border: 1px solid var(--border); padding: 9px 16px; border-radius: 20px; cursor: pointer;
+    }
+    .list { max-width: 680px; margin: 0 auto; display: flex; flex-direction: column; gap: 10px; }
+    .card {
+      background: white; border: 1px solid var(--border); border-radius: var(--radius);
+      padding: 18px 20px; display: flex; justify-content: space-between; align-items: center;
+    }
+    .card.checked { border-color: #a7f3d0; background: #f0fdf9; }
+    .info h3 { font-size: 17px; font-weight: 600; margin-bottom: 4px; }
+    .info p { font-size: 13px; color: var(--muted); margin-bottom: 2px; }
+    .badge {
+      font-size: 12px; font-weight: 600; padding: 6px 14px; border-radius: 20px; white-space: nowrap;
+    }
+    .badge.arrived { background: #ccfbf1; color: var(--success); }
+    .badge.waiting { background: #f4f4f4; color: var(--muted); }
+    .empty { text-align: center; padding: 60px 20px; color: var(--muted); font-size: 15px; }
+    .updated { text-align: center; margin-top: 28px; font-size: 12px; color: #aaa; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <img src="/logo.png" alt="LAM" class="logo-small" />
+      <h1>Today’s Appointments</h1>
+    </div>
+    <button class="refresh" onclick="loadBookings()">Refresh</button>
+  </div>
+  <div class="list" id="list"><div class="empty">Loading…</div></div>
+  <p class="updated" id="updated"></p>
+  <script>
+    function formatTime(iso) {
+      return new Date(iso).toLocaleTimeString("en-US", {
+        timeZone: "America/Toronto",
+        hour: "numeric",
+        minute: "2-digit",
+      });
+    }
+
+    async function loadBookings() {
+      const list = document.getElementById("list");
+      const updated = document.getElementById("updated");
+      try {
+        const res = await fetch("/api/get-todays-bookings");
+        const data = await res.json();
+        if (!res.ok) { list.innerHTML = `<div class="empty">Error loading appointments</div>`; return; }
+
+        const bookings = (data.bookings || []).sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+
+        if (bookings.length === 0) {
+          list.innerHTML = `<div class="empty">No appointments scheduled for today</div>`;
+        } else {
+          list.innerHTML = bookings.map((b) => {
+            const time = formatTime(b.start_at);
+            const checked = b.checkedIn;
+            return `
+              <div class="card ${checked ? "checked" : ""}">
+                <div class="info">
+                  <h3>${time}</h3>
+                  <p>${b.serviceName || "Service"}</p>
+                  <p>Tech: ${b.staffName || "Staff"}</p>
+                  ${checked ? `<p style="color:#0d9488;margin-top:4px">${b.seller_note || ""}</p>` : ""}
+                </div>
+                <span class="badge ${checked ? "arrived" : "waiting"}">
+                  ${checked ? "Arrived" : "Waiting"}
+                </span>
+              </div>`;
+          }).join("");
+        }
+
+        updated.textContent = "Last updated " + new Date().toLocaleTimeString("en-US", {
+          timeZone: "America/Toronto",
+          hour: "numeric", minute: "2-digit", second: "2-digit"
+        }) + " (Toronto)";
+      } catch (err) {
+        list.innerHTML = `<div class="empty">Could not load data</div>`;
+      }
+    }
+    loadBookings();
+    setInterval(loadBookings, 20000);
+  </script>
+</body>
+</html>
