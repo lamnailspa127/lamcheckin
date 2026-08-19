@@ -33,8 +33,9 @@ export default async (req) => {
       });
     }
 
-    const now = new Date();
-    const timeStr = now.toLocaleTimeString("en-US", {
+    // Use Toronto timezone for the check-in time
+    const timeStr = new Date().toLocaleTimeString("en-US", {
+      timeZone: "America/Toronto",
       hour: "numeric",
       minute: "2-digit",
       hour12: true,

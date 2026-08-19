@@ -1,5 +1,5 @@
 // Scheduled function – runs once per day
-// Collects yesterday’s check-ins and prepares a log (and can email it)
+// Sends a detailed check-in summary email
 
 const SQUARE_VERSION = "2025-01-23";
 
@@ -12,7 +12,6 @@ function getBaseUrl() {
 
 function getYesterdayRangeToronto() {
   const now = new Date();
-  // Get yesterday in Toronto timezone
   const torontoNow = new Date(now.toLocaleString("en-US", { timeZone: "America/Toronto" }));
   const yesterday = new Date(torontoNow);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -22,7 +21,6 @@ function getYesterdayRangeToronto() {
   const end = new Date(yesterday);
   end.setHours(23, 59, 59, 999);
 
-  // Approximate conversion back to UTC
   const offset = now.getTime() - torontoNow.getTime();
   const startISO = new Date(start.getTime() + offset).toISOString();
   const endISO = new Date(end.getTime() + offset).toISOString();
@@ -36,6 +34,89 @@ function getYesterdayRangeToronto() {
   });
 
   return { start_at_min: startISO, start_at_max: endISO, dateLabel };
+}
+
+async function getCustomerInfo(token, customerId) {
+  if (!customerId) return { name: "Guest", phone: "" };
+  try {
+    const res = await fetch(`${getBaseUrl()}/v2/customers/${customerId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Square-Version": SQUARE_VERSION,
+      },
+    });
+    const data = await res.json();
+    if (res.ok && data.customer) {
+      const c = data.customer;
+      const name = [c.given_name, c.family_name].filter(Boolean).join(" ") || "Guest";
+      const phone = c.phone_number || "";
+      return { name, phone };
+    }
+  } catch (e) {
+    console.error("Customer lookup failed", e);
+  }
+  return { name: "Guest", phone: "" };
+}
+
+async function getTeamMemberName(token, teamMemberId) {
+  if (!teamMemberId) return "Staff";
+  try {
+    const res = await fetch(
+      `${getBaseUrl()}/v2/bookings/team-member-booking-profiles/${teamMemberId}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Square-Version": SQUARE_VERSION,
+        },
+      }
+    );
+    const data = await res.json();
+    if (res.ok && data.team_member_booking_profile?.display_name) {
+      return data.team_member_booking_profile.display_name;
+    }
+
+    const res2 = await fetch(`${getBaseUrl()}/v2/team-members/${teamMemberId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Square-Version": SQUARE_VERSION,
+      },
+    });
+    const data2 = await res2.json();
+    if (res2.ok && data2.team_member) {
+      const tm = data2.team_member;
+      return [tm.given_name, tm.family_name].filter(Boolean).join(" ") || "Staff";
+    }
+  } catch (e) {
+    console.error("Team member lookup failed", e);
+  }
+  return "Staff";
+}
+
+async function getServiceName(token, variationId) {
+  if (!variationId) return "Service";
+  try {
+    const res = await fetch(
+      `${getBaseUrl()}/v2/catalog/object/${variationId}?include_related_objects=true`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Square-Version": SQUARE_VERSION,
+        },
+      }
+    );
+    const data = await res.json();
+    if (res.ok && data.object) {
+      const variation = data.object.item_variation_data;
+      if (variation?.name) return variation.name;
+      if (data.related_objects) {
+        const item = data.related_objects.find((o) => o.type === "ITEM");
+        if (item?.item_data?.name) return item.item_data.name;
+      }
+    }
+  } catch (e) {
+    console.error("Service lookup failed", e);
+  }
+  return "Service";
 }
 
 export default async () => {
@@ -78,30 +159,60 @@ export default async () => {
       (b) => b.seller_note && b.seller_note.toLowerCase().includes("checked in")
     );
 
+    // Enrich each checked-in booking
+    const details = await Promise.all(
+      checkedIn.map(async (b) => {
+        const segment = b.appointment_segments?.[0] || {};
+        const [customer, staffName, serviceName] = await Promise.all([
+          getCustomerInfo(token, b.customer_id),
+          getTeamMemberName(token, segment.team_member_id),
+          getServiceName(token, segment.service_variation_id),
+        ]);
+
+        const apptTime = new Date(b.start_at).toLocaleTimeString("en-US", {
+          timeZone: "America/Toronto",
+          hour: "numeric",
+          minute: "2-digit",
+        });
+
+        return {
+          apptTime,
+          name: customer.name,
+          phone: customer.phone,
+          service: serviceName,
+          staff: staffName,
+          note: b.seller_note || "",
+        };
+      })
+    );
+
+    // Sort by appointment time
+    details.sort((a, b) => a.apptTime.localeCompare(b.apptTime));
+
     let log = `LAM Nail Spa – Daily Check-in Log\n`;
     log += `Date: ${dateLabel}\n`;
     log += `Total appointments: ${bookings.length}\n`;
     log += `Checked in: ${checkedIn.length}\n\n`;
 
-    if (checkedIn.length === 0) {
+    if (details.length === 0) {
       log += "No customers checked in via the app yesterday.\n";
     } else {
-      log += "Checked-in customers:\n";
-      checkedIn.forEach((b) => {
-        const time = new Date(b.start_at).toLocaleTimeString("en-US", {
-          timeZone: "America/Toronto",
-          hour: "numeric",
-          minute: "2-digit",
-        });
-        log += `• ${time}  –  ${b.seller_note}\n`;
+      log += "Checked-in customers:\n\n";
+      details.forEach((d, i) => {
+        log += `${i + 1}. ${d.apptTime}\n`;
+        log += `   Name: ${d.name}\n`;
+        if (d.phone) log += `   Phone: ${d.phone}\n`;
+        log += `   Service: ${d.service}\n`;
+        log += `   Nail Tech: ${d.staff}\n`;
+        log += `   ${d.note}\n\n`;
       });
     }
 
-    log += `\n---\nGenerated automatically by LAM Check-In app`;
+    log += `---\nGenerated automatically by LAM Check-In app`;
 
     console.log(log);
 
-    // Send email if Resend API key is present
+    // Send email if Resend is configured
     if (process.env.RESEND_API_KEY) {
       try {
         const emailRes = await fetch("https://api.resend.com/emails", {
@@ -130,7 +241,6 @@ export default async () => {
   }
 };
 
-// Scheduled functions must NOT have a custom path
 export const config = {
   schedule: "@daily",
 };
