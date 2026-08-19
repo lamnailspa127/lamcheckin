@@ -52,6 +52,23 @@
     }
     button.primary:active { transform: scale(0.98); }
     button.primary:disabled { opacity: 0.35; cursor: not-allowed; }
+    button.secondary {
+      width: 100%;
+      margin-top: 12px;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      border: 1.5px solid #111;
+      border-radius: 12px;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+    }
+    button.secondary:active {
+      transform: scale(0.98);
+      background: #f5f5f5;
+    }
     .result { width: 100%; max-width: 340px; margin-top: 28px; display: none; }
     .result.visible { display: block; }
     .card {
@@ -75,41 +92,6 @@
     .loading { opacity: 0.55; pointer-events: none; }
     footer { margin-top: auto; padding-top: 40px; font-size: 12px; color: #bbb; }
 
-    /* Fixed Book button – always visible on iPhone & iPad */
-    .fixed-book {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: 16px 20px 28px;
-      background: linear-gradient(to top, #ffffff 70%, rgba(255,255,255,0));
-      z-index: 100;
-      display: flex;
-      justify-content: center;
-    }
-    .fixed-book button {
-      width: 100%;
-      max-width: 340px;
-      padding: 16px;
-      font-size: 16px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-      border: 1.5px solid #111;
-      border-radius: 12px;
-      background: #fff;
-      color: #111;
-      cursor: pointer;
-      box-shadow: 0 4px 16px rgba(0,0,0,0.08);
-    }
-    .fixed-book button:active {
-      transform: scale(0.98);
-      background: #f5f5f5;
-    }
-
-    /* Extra bottom space so content isn't hidden behind the fixed button */
-    body {
-      padding-bottom: 110px !important;
-    }
   </style>
 </head>
 <body>
@@ -136,18 +118,15 @@
 
   <div class="actions">
     <button class="primary" id="lookupBtn" onclick="lookup()" disabled>Find Appointment</button>
+    <button class="secondary" onclick="window.open('https://book.squareup.com/appointments/ugb6nlboeff7si/location/L5NJSKPJF80C0/services', '_blank')">
+      Book an Appointment
+    </button>
   </div>
 
   <div class="message" id="message"></div>
   <div class="result" id="result"></div>
   <footer>LAM Nail Spa · Est. 2023</footer>
 
-  <!-- Fixed Book button for walk-ins -->
-  <div class="fixed-book">
-    <button onclick="window.open('https://book.squareup.com/appointments/ugb6nlboeff7si/location/L5NJSKPJF80C0/services', '_blank')">
-      Book an Appointment
-    </button>
-  </div>
 
   <script>
     const BOOKING_URL = "https://book.squareup.com/appointments/ugb6nlboeff7si/location/L5NJSKPJF80C0/services";
