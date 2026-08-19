@@ -154,7 +154,10 @@ export default async () => {
       return;
     }
 
-    const bookings = data.bookings || [];
+    const bookings = (data.bookings || []).filter((b) => {
+      const status = (b.status || "").toUpperCase();
+      return status !== "CANCELLED" && status !== "NO_SHOW";
+    });
     const checkedIn = bookings.filter(
       (b) => b.seller_note && b.seller_note.toLowerCase().includes("checked in")
     );

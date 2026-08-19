@@ -171,7 +171,11 @@ export default async (req) => {
       });
     }
 
-    const bookings = data.bookings || [];
+    const bookings = (data.bookings || []).filter((b) => {
+      // Only keep active bookings – hide cancelled and no-shows
+      const status = (b.status || "").toUpperCase();
+      return status !== "CANCELLED" && status !== "NO_SHOW";
+    });
 
     // Enrich each booking with service name and staff name
     const enriched = await Promise.all(
