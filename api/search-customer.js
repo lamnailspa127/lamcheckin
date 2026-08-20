@@ -7,13 +7,61 @@ function getBaseUrl() {
     : "https://connect.squareup.com";
 }
 
-function normalizePhone(phone) {
-  let digits = (phone || "").replace(/\D/g, "");
-  if (digits.length === 10) digits = "1" + digits;
-  if (digits.length === 11 && digits.startsWith("1")) {
-    return "+" + digits;
+function phoneVariants(phone) {
+  const digits = (phone || "").replace(/\D/g, "");
+  const variants = new Set();
+
+  if (!digits) return [];
+
+  // Raw digits
+  variants.add(digits);
+
+  // 10-digit North American
+  if (digits.length === 10) {
+    variants.add("1" + digits);
+    variants.add("+1" + digits);
   }
-  return phone.startsWith("+") ? phone : "+" + digits;
+
+  // 11-digit starting with 1
+  if (digits.length === 11 && digits.startsWith("1")) {
+    variants.add(digits.slice(1));
+    variants.add("+" + digits);
+    variants.add(digits);
+  }
+
+  // Already has country style
+  if (digits.length >= 10) {
+    variants.add("+" + digits);
+  }
+
+  return Array.from(variants);
+}
+
+async function searchByPhone(token, phoneExact) {
+  const body = {
+    query: {
+      filter: {
+        phone_number: {
+          exact: phoneExact,
+        },
+      },
+    },
+    limit: 20,
+  };
+
+  const res = await fetch(`${getBaseUrl()}/v2/customers/search`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Square-Version": SQUARE_VERSION,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  const data = await res.json();
+  if (!res.ok) return [];
+  return data.customers || [];
 }
 
 module.exports = async function handler(req, res) {
@@ -32,36 +80,24 @@ module.exports = async function handler(req, res) {
       return res.status(500).json({ error: "Server misconfigured" });
     }
 
-    const e164 = normalizePhone(phone);
+    const variants = phoneVariants(phone);
+    const byId = new Map();
 
-    const body = {
-      query: {
-        filter: {
-          phone_number: {
-            exact: e164,
-          },
-        },
-      },
-      limit: 20,
-    };
-
-    const squareRes = await fetch(`${getBaseUrl()}/v2/customers/search`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Square-Version": SQUARE_VERSION,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    });
-
-    const data = await squareRes.json();
-
-    if (!squareRes.ok) {
-      return res.status(squareRes.status).json({ error: data.errors || data });
+    // Search every common phone format so duplicate profiles are found
+    for (const v of variants) {
+      const found = await searchByPhone(token, v);
+      for (const c of found) {
+        if (c.id) byId.set(c.id, c);
+      }
     }
 
-    return res.status(200).json({ customers: data.customers || [] });
+    const customers = Array.from(byId.values());
+
+    return res.status(200).json({
+      customers,
+      searchedFormats: variants,
+      count: customers.length,
+    });
   } catch (err) {
     return res.status(500).json({ error: err.message });
   }
