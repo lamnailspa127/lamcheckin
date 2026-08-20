@@ -42,7 +42,7 @@ module.exports = async function handler(req, res) {
           },
         },
       },
-      limit: 5,
+      limit: 20,
     };
 
     const squareRes = await fetch(`${getBaseUrl()}/v2/customers/search`, {
