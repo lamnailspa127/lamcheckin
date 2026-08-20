@@ -199,10 +199,18 @@
         const bookings = bookData.bookings || [];
 
         if (bookings.length === 0) {
+          const profiles = bookData.profilesFound || [];
+          let profileNote = "";
+          if (profiles.length > 0) {
+            profileNote = "<p class=\"detail\" style=\"margin-top:8px\">Profiles found: " +
+              profiles.map(p => p.name).join(", ") +
+              "</p><p class=\"detail\">None of these profiles have an appointment today.</p>";
+          }
           resultEl.innerHTML = `
             <div class="card">
               <h3>No appointment found</h3>
               <p class="detail">We couldn’t find a booking for this number today.</p>
+              ${profileNote}
               <button class="primary" style="margin-top:18px" onclick="window.open('${BOOKING_URL}', '_blank')">
                 Book an Appointment
               </button>
