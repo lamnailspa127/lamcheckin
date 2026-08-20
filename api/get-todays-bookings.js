@@ -22,6 +22,18 @@ function getTorontoTodayRange() {
   };
 }
 
+function digitsOnly(phone) {
+  return (phone || "").replace(/\D/g, "");
+}
+
+function phonesMatch(a, b) {
+  const da = digitsOnly(a);
+  const db = digitsOnly(b);
+  if (!da || !db) return false;
+  // Compare last 10 digits (ignore country code differences)
+  return da.slice(-10) === db.slice(-10);
+}
+
 async function getTeamMemberName(token, teamMemberId) {
   if (!teamMemberId) return "Staff";
   try {
@@ -83,6 +95,23 @@ async function getServiceName(token, variationId) {
   return "Service";
 }
 
+async function getCustomer(token, customerId) {
+  if (!customerId) return null;
+  try {
+    const res = await fetch(`${getBaseUrl()}/v2/customers/${customerId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Square-Version": SQUARE_VERSION,
+      },
+    });
+    const data = await res.json();
+    if (res.ok && data.customer) return data.customer;
+  } catch (e) {
+    console.error("Customer lookup failed", e);
+  }
+  return null;
+}
+
 module.exports = async function handler(req, res) {
   if (req.method !== "GET" && req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
@@ -97,10 +126,14 @@ module.exports = async function handler(req, res) {
     }
 
     let customerId = null;
+    let phone = null;
     if (req.method === "POST") {
-      customerId = (req.body || {}).customerId || null;
+      const body = req.body || {};
+      customerId = body.customerId || null;
+      phone = body.phone || null;
     } else {
       customerId = req.query.customerId || null;
+      phone = req.query.phone || null;
     }
 
     const { start_at_min, start_at_max } = getTorontoTodayRange();
@@ -109,9 +142,10 @@ module.exports = async function handler(req, res) {
       location_id: locationId,
       start_at_min,
       start_at_max,
-      limit: "50",
+      limit: "100",
     });
-    if (customerId) params.set("customer_id", customerId);
+    // Only filter by customer when we are NOT doing a phone-wide search
+    if (customerId && !phone) params.set("customer_id", customerId);
 
     const squareRes = await fetch(`${getBaseUrl()}/v2/bookings?${params.toString()}`, {
       method: "GET",
@@ -127,7 +161,7 @@ module.exports = async function handler(req, res) {
       return res.status(squareRes.status).json({ error: data.errors || data });
     }
 
-    const bookings = (data.bookings || []).filter((b) => {
+    let bookings = (data.bookings || []).filter((b) => {
       const status = (b.status || "").toUpperCase();
       const hidden = [
         "CANCELLED",
@@ -138,6 +172,29 @@ module.exports = async function handler(req, res) {
       ];
       return !hidden.includes(status);
     });
+
+    // If searching by phone: keep only bookings whose customer phone matches
+    if (phone) {
+      const customerCache = new Map();
+      const matched = [];
+
+      for (const b of bookings) {
+        const cid = b.customer_id;
+        if (!cid) continue;
+
+        let customer = customerCache.get(cid);
+        if (customer === undefined) {
+          customer = await getCustomer(token, cid);
+          customerCache.set(cid, customer);
+        }
+
+        if (customer && phonesMatch(customer.phone_number, phone)) {
+          const name = [customer.given_name, customer.family_name].filter(Boolean).join(" ") || "Guest";
+          matched.push({ ...b, _guestName: name, _customerPhone: customer.phone_number });
+        }
+      }
+      bookings = matched;
+    }
 
     const enriched = await Promise.all(
       bookings.map(async (b) => {
@@ -153,6 +210,7 @@ module.exports = async function handler(req, res) {
           staffName,
           serviceName,
           teamMemberId: segment.team_member_id,
+          guestName: b._guestName || null,
         };
       })
     );

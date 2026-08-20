@@ -187,16 +187,18 @@
       resultEl.innerHTML = "";
 
       try {
-        const custRes = await fetch("/api/search-customer", {
+        // Search today's appointments by phone across ALL customer profiles
+        const bookRes = await fetch("/api/get-todays-bookings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone }),
+          body: JSON.stringify({ phone: phone }),
         });
-        const custData = await custRes.json();
-        if (!custRes.ok) throw new Error(custData.error?.detail || custData.error || "Search failed");
+        const bookData = await bookRes.json();
+        if (!bookRes.ok) throw new Error(bookData.error?.detail || bookData.error || "Could not load bookings");
 
-        const customers = custData.customers || [];
-        if (customers.length === 0) {
+        const bookings = bookData.bookings || [];
+
+        if (bookings.length === 0) {
           resultEl.innerHTML = `
             <div class="card">
               <h3>No appointment found</h3>
@@ -209,76 +211,19 @@
           return;
         }
 
-        // Check ALL profiles that share this phone number
-        const allBookings = [];
-        const seenIds = new Set();
-        let displayName = "Guest";
-
-        for (const customer of customers) {
-          const name = [customer.given_name, customer.family_name].filter(Boolean).join(" ") || "Guest";
-          if (displayName === "Guest" && name !== "Guest") displayName = name;
-
-          const bookRes = await fetch("/api/get-todays-bookings", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ customerId: customer.id }),
-          });
-          const bookData = await bookRes.json();
-          if (!bookRes.ok) continue;
-
-          for (const b of (bookData.bookings || [])) {
-            if (!seenIds.has(b.id)) {
-              seenIds.add(b.id);
-              allBookings.push({ ...b, _guestName: name });
-            }
-          }
-        }
-
-        if (allBookings.length === 0) {
-          resultEl.innerHTML = `
-            <div class="card">
-              <h3>Hi ${displayName}</h3>
-              <p class="detail">No appointment scheduled for today.</p>
-              <button class="primary" style="margin-top:18px" onclick="window.open('${BOOKING_URL}', '_blank')">
-                Book an Appointment
-              </button>
-            </div>`;
-          resultEl.classList.add("visible");
-          return;
-        }
-
-        allBookings.sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+        bookings.sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
 
         let html = "";
-        allBookings.forEach((b) => {
+        bookings.forEach((b) => {
           const time = formatTime(b.start_at);
           const checkedIn = b.checkedIn;
-          const guest = b._guestName || displayName;
+          const guest = b.guestName || "Guest";
           html += `
             <div class="card">
               <h3>${time}</h3>
               <p class="detail"><span>Service:</span> ${b.serviceName || "Service"}</p>
               <p class="detail"><span>Nail Tech:</span> ${b.staffName || "Staff"}</p>
               <p class="detail"><span>Guest:</span> ${guest}</p>
-              <span class="badge ${checkedIn ? "" : "waiting"}">${checkedIn ? "Checked in" : "Ready to check in"}</span>
-              ${!checkedIn ? `<button class="primary" style="margin-top:16px" onclick="checkIn('${b.id}', ${b.version || 0})">Check In Now</button>` : ""}
-            </div>`;
-        });
-        resultEl.innerHTML = html;
-        resultEl.classList.add("visible");
-          return;
-        }
-
-        let html = "";
-        bookings.forEach((b) => {
-          const time = formatTime(b.start_at);
-          const checkedIn = b.checkedIn;
-          html += `
-            <div class="card">
-              <h3>${time}</h3>
-              <p class="detail"><span>Service:</span> ${b.serviceName || "Service"}</p>
-              <p class="detail"><span>Nail Tech:</span> ${b.staffName || "Staff"}</p>
-              <p class="detail"><span>Guest:</span> ${name}</p>
               <span class="badge ${checkedIn ? "" : "waiting"}">${checkedIn ? "Checked in" : "Ready to check in"}</span>
               ${!checkedIn ? `<button class="primary" style="margin-top:16px" onclick="checkIn('${b.id}', ${b.version || 0})">Check In Now</button>` : ""}
             </div>`;
