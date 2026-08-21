@@ -21,18 +21,18 @@
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
     html, body {
-      height: 100%;
-      overflow: hidden;
+      min-height: 100%;
     }
     body {
       font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
       background: var(--bg); color: var(--text);
       min-height: 100dvh;
-      max-height: 100dvh;
       display: flex; flex-direction: column; align-items: center;
-      padding: 12px 16px 16px;
+      padding: 12px 16px 24px;
       -webkit-font-smoothing: antialiased;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
     }
     .logo {
       width: 88px;
@@ -129,14 +129,27 @@
     #result {
       width: 100%;
       max-width: 320px;
-      margin-top: 10px;
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-      flex: 1;
-      min-height: 0;
+      margin-top: 8px;
       display: none;
     }
     #result.visible { display: block; }
+    #searchUI.hidden { display: none !important; }
+    .new-search-btn {
+      width: 100%;
+      max-width: 320px;
+      margin-bottom: 12px;
+      padding: 12px;
+      font-size: 15px;
+      font-weight: 600;
+      border: 1.5px solid #111;
+      border-radius: 12px;
+      background: #fff;
+      color: #111;
+      cursor: pointer;
+      display: none;
+    }
+    .new-search-btn.show { display: block; }
+    .card button.primary { margin-top: 12px; }
     .card {
       background: #fafafa;
       border: 1px solid var(--border);
@@ -196,6 +209,10 @@
   <h1>LAM CHECK IN</h1>
   <p class="subtitle">Enter your phone number</p>
 
+  <button type="button" class="new-search-btn" id="newSearchBtn" onclick="resetSearch()">← New Search</button>
+
+  <div id="searchUI">
+
   <div class="phone-display empty" id="display">Phone number</div>
 
   <div class="keypad" id="keypad">
@@ -219,6 +236,7 @@
       Book an Appointment
     </button>
   </div>
+  </div><!-- /searchUI -->
 
   <div class="message" id="message"></div>
   <div class="result" id="result"></div>
@@ -233,6 +251,20 @@
     const resultEl = document.getElementById("result");
     const messageEl = document.getElementById("message");
     const bodyEl = document.body;
+    const searchUI = document.getElementById("searchUI");
+    const newSearchBtn = document.getElementById("newSearchBtn");
+
+    function resetSearch() {
+      if (searchUI) searchUI.classList.remove("hidden");
+      if (newSearchBtn) newSearchBtn.classList.remove("show");
+      resultEl.classList.remove("visible");
+      resultEl.innerHTML = "";
+      clearMessage();
+      phone = "";
+      renderPhone();
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
 
     document.getElementById("keypad").addEventListener("click", (e) => {
       const key = e.target.closest(".key")?.dataset.key;
@@ -335,6 +367,9 @@
         });
         resultEl.innerHTML = html;
         resultEl.classList.add("visible");
+        if (searchUI) searchUI.classList.add("hidden");
+        if (newSearchBtn) newSearchBtn.classList.add("show");
+        window.scrollTo({ top: 0, behavior: "smooth" });
       } catch (err) {
         showMessage(err.message || "Something went wrong", "error");
       } finally {
