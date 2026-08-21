@@ -16,7 +16,6 @@ function getTorontoTodayRange() {
   startOfDay.setHours(0, 0, 0, 0);
   const endOfDay = new Date(torontoNow);
   endOfDay.setHours(23, 59, 59, 999);
-
   const offset = now.getTime() - torontoNow.getTime();
   return {
     start_at_min: new Date(startOfDay.getTime() + offset).toISOString(),
@@ -36,7 +35,7 @@ function last10(phone) {
 function phonesMatch(a, b) {
   const da = last10(a);
   const db = last10(b);
-  return da && db && da === db;
+  return !!(da && db && da === db);
 }
 
 function phoneVariants(phone) {
@@ -58,30 +57,36 @@ function phoneVariants(phone) {
 
 async function searchCustomersByPhone(token, phone) {
   const byId = new Map();
-  for (const v of phoneVariants(phone)) {
-    try {
-      const res = await fetch(`${getBaseUrl()}/v2/customers/search`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Square-Version": SQUARE_VERSION,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          query: { filter: { phone_number: { exact: v } } },
-          limit: 50,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok) {
-        for (const c of data.customers || []) {
-          if (c.id) byId.set(c.id, c);
+  const variants = phoneVariants(phone);
+
+  // Run variant searches in parallel (much faster)
+  await Promise.all(
+    variants.map(async (v) => {
+      try {
+        const res = await fetch(`${getBaseUrl()}/v2/customers/search`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Square-Version": SQUARE_VERSION,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            query: { filter: { phone_number: { exact: v } } },
+            limit: 50,
+          }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          for (const c of data.customers || []) {
+            if (c.id) byId.set(c.id, c);
+          }
         }
+      } catch (e) {
+        console.error("customer search", v, e.message);
       }
-    } catch (e) {
-      console.error("customer search failed for", v, e);
-    }
-  }
+    })
+  );
+
   return Array.from(byId.values());
 }
 
@@ -107,7 +112,6 @@ async function listAllTodaysBookings(token, locationId) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(JSON.stringify(data.errors || data));
-
     all.push(...(data.bookings || []));
     cursor = data.cursor || null;
   } while (cursor);
@@ -135,14 +139,24 @@ async function getCustomer(token, customerId) {
     });
     const data = await res.json();
     if (res.ok) return data.customer || null;
-  } catch (e) {
-    console.error("getCustomer", e);
-  }
+  } catch (e) {}
   return null;
 }
 
-async function getTeamMemberName(token, teamMemberId) {
+// Simple in-request caches
+function makeCaches() {
+  return {
+    staff: new Map(),
+    service: new Map(),
+    customer: new Map(),
+  };
+}
+
+async function getTeamMemberName(token, teamMemberId, cache) {
   if (!teamMemberId) return "Staff";
+  if (cache.staff.has(teamMemberId)) return cache.staff.get(teamMemberId);
+
+  let name = "Staff";
   try {
     const res = await fetch(
       `${getBaseUrl()}/v2/bookings/team-member-booking-profiles/${teamMemberId}`,
@@ -155,14 +169,18 @@ async function getTeamMemberName(token, teamMemberId) {
     );
     const data = await res.json();
     if (res.ok && data.team_member_booking_profile?.display_name) {
-      return data.team_member_booking_profile.display_name;
+      name = data.team_member_booking_profile.display_name;
     }
   } catch (e) {}
-  return "Staff";
+  cache.staff.set(teamMemberId, name);
+  return name;
 }
 
-async function getServiceName(token, variationId) {
+async function getServiceName(token, variationId, cache) {
   if (!variationId) return "Service";
+  if (cache.service.has(variationId)) return cache.service.get(variationId);
+
+  let name = "Service";
   try {
     const res = await fetch(
       `${getBaseUrl()}/v2/catalog/object/${variationId}?include_related_objects=true`,
@@ -176,12 +194,36 @@ async function getServiceName(token, variationId) {
     const data = await res.json();
     if (res.ok && data.object) {
       const variation = data.object.item_variation_data;
-      if (variation?.name) return variation.name;
-      const item = (data.related_objects || []).find((o) => o.type === "ITEM");
-      if (item?.item_data?.name) return item.item_data.name;
+      if (variation?.name) name = variation.name;
+      else {
+        const item = (data.related_objects || []).find((o) => o.type === "ITEM");
+        if (item?.item_data?.name) name = item.item_data.name;
+      }
     }
   } catch (e) {}
-  return "Service";
+  cache.service.set(variationId, name);
+  return name;
+}
+
+async function enrichBookings(token, bookings, cache) {
+  return Promise.all(
+    bookings.map(async (b) => {
+      const segment = b.appointment_segments?.[0] || {};
+      const [staffName, serviceName] = await Promise.all([
+        getTeamMemberName(token, segment.team_member_id, cache),
+        getServiceName(token, segment.service_variation_id, cache),
+      ]);
+      return {
+        ...b,
+        checkedIn: !!(
+          b.seller_note && b.seller_note.toLowerCase().includes("checked in")
+        ),
+        staffName,
+        serviceName,
+        guestName: b._guestName || null,
+      };
+    })
+  );
 }
 
 module.exports = async function handler(req, res) {
@@ -202,101 +244,67 @@ module.exports = async function handler(req, res) {
       (req.method === "GET" ? req.query.customerId : null) ||
       null;
 
-    // Staff page: no phone filter — return all today's active bookings
+    const cache = makeCaches();
+
+    // Staff page – all today's bookings
     if (!phone && !customerId) {
       const bookings = await listAllTodaysBookings(token, locationId);
-      const enriched = await Promise.all(
-        bookings.map(async (b) => {
-          const segment = b.appointment_segments?.[0] || {};
-          const [staffName, serviceName] = await Promise.all([
-            getTeamMemberName(token, segment.team_member_id),
-            getServiceName(token, segment.service_variation_id),
-          ]);
-          return {
-            ...b,
-            checkedIn: !!(
-              b.seller_note &&
-              b.seller_note.toLowerCase().includes("checked in")
-            ),
-            staffName,
-            serviceName,
-          };
-        })
-      );
+      const enriched = await enrichBookings(token, bookings, cache);
       return res.status(200).json({ bookings: enriched });
     }
 
-    // Customer check-in by phone
+    // Customer check-in by phone (optimized)
     if (phone) {
-      // Method 1: find all customer profiles with this phone
-      const profiles = await searchCustomersByPhone(token, phone);
+      // 1) Find all profiles with this phone + 2) load today's bookings — in parallel
+      const [profiles, allBookings] = await Promise.all([
+        searchCustomersByPhone(token, phone),
+        listAllTodaysBookings(token, locationId),
+      ]);
+
       const profileIds = new Set(profiles.map((p) => p.id));
+      const profileName = new Map(
+        profiles.map((p) => [
+          p.id,
+          [p.given_name, p.family_name].filter(Boolean).join(" ") || "Guest",
+        ])
+      );
 
-      // Method 2: all today's bookings, match by customer_id OR by retrieving customer phone
-      const allBookings = await listAllTodaysBookings(token, locationId);
-      const customerCache = new Map();
-      for (const p of profiles) customerCache.set(p.id, p);
+      // Fast path: match by customer_id only (no extra customer API calls)
+      let matched = allBookings
+        .filter((b) => b.customer_id && profileIds.has(b.customer_id))
+        .map((b) => ({
+          ...b,
+          _guestName: profileName.get(b.customer_id) || "Guest",
+        }));
 
-      const matched = [];
-      const seen = new Set();
+      // Slow fallback only if nothing matched (rare)
+      if (matched.length === 0 && allBookings.length > 0) {
+        const uniqueIds = [
+          ...new Set(allBookings.map((b) => b.customer_id).filter(Boolean)),
+        ];
+        await Promise.all(
+          uniqueIds.map(async (cid) => {
+            if (cache.customer.has(cid)) return;
+            cache.customer.set(cid, await getCustomer(token, cid));
+          })
+        );
 
-      for (const b of allBookings) {
-        if (seen.has(b.id)) continue;
-        const cid = b.customer_id;
-        if (!cid) continue;
-
-        // Match if booking belongs to any profile we found by phone
-        if (profileIds.has(cid)) {
-          let customer = customerCache.get(cid);
-          if (!customer) {
-            customer = await getCustomer(token, cid);
-            customerCache.set(cid, customer);
-          }
-          const name = customer
-            ? [customer.given_name, customer.family_name]
-                .filter(Boolean)
-                .join(" ") || "Guest"
-            : "Guest";
-          matched.push({ ...b, _guestName: name });
-          seen.add(b.id);
-          continue;
-        }
-
-        // Extra safety: load customer and compare phone digits
-        let customer = customerCache.get(cid);
-        if (customer === undefined) {
-          customer = await getCustomer(token, cid);
-          customerCache.set(cid, customer);
-        }
-        if (customer && phonesMatch(customer.phone_number, phone)) {
-          const name =
-            [customer.given_name, customer.family_name]
-              .filter(Boolean)
-              .join(" ") || "Guest";
-          matched.push({ ...b, _guestName: name });
-          seen.add(b.id);
-        }
+        matched = allBookings
+          .filter((b) => {
+            const c = cache.customer.get(b.customer_id);
+            return c && phonesMatch(c.phone_number, phone);
+          })
+          .map((b) => {
+            const c = cache.customer.get(b.customer_id);
+            const name = c
+              ? [c.given_name, c.family_name].filter(Boolean).join(" ") ||
+                "Guest"
+              : "Guest";
+            return { ...b, _guestName: name };
+          });
       }
 
-      const enriched = await Promise.all(
-        matched.map(async (b) => {
-          const segment = b.appointment_segments?.[0] || {};
-          const [staffName, serviceName] = await Promise.all([
-            getTeamMemberName(token, segment.team_member_id),
-            getServiceName(token, segment.service_variation_id),
-          ]);
-          return {
-            ...b,
-            checkedIn: !!(
-              b.seller_note &&
-              b.seller_note.toLowerCase().includes("checked in")
-            ),
-            staffName,
-            serviceName,
-            guestName: b._guestName || "Guest",
-          };
-        })
-      );
+      const enriched = await enrichBookings(token, matched, cache);
 
       return res.status(200).json({
         bookings: enriched,
@@ -310,22 +318,15 @@ module.exports = async function handler(req, res) {
     }
 
     // By single customerId
-    const params = new URLSearchParams({
-      location_id: locationId,
-      ...getTorontoTodayRange(),
-      limit: "50",
-      customer_id: customerId,
-    });
-    // fix params - getTorontoTodayRange returns object
     const range = getTorontoTodayRange();
-    const p2 = new URLSearchParams({
+    const params = new URLSearchParams({
       location_id: locationId,
       start_at_min: range.start_at_min,
       start_at_max: range.start_at_max,
       limit: "50",
       customer_id: customerId,
     });
-    const squareRes = await fetch(`${getBaseUrl()}/v2/bookings?${p2}`, {
+    const squareRes = await fetch(`${getBaseUrl()}/v2/bookings?${params}`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Square-Version": SQUARE_VERSION,
@@ -345,24 +346,7 @@ module.exports = async function handler(req, res) {
         "NO_SHOW",
       ].includes(status);
     });
-    const enriched = await Promise.all(
-      bookings.map(async (b) => {
-        const segment = b.appointment_segments?.[0] || {};
-        const [staffName, serviceName] = await Promise.all([
-          getTeamMemberName(token, segment.team_member_id),
-          getServiceName(token, segment.service_variation_id),
-        ]);
-        return {
-          ...b,
-          checkedIn: !!(
-            b.seller_note &&
-            b.seller_note.toLowerCase().includes("checked in")
-          ),
-          staffName,
-          serviceName,
-        };
-      })
-    );
+    const enriched = await enrichBookings(token, bookings, cache);
     return res.status(200).json({ bookings: enriched });
   } catch (err) {
     console.error(err);
