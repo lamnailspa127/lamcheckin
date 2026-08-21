@@ -187,45 +187,30 @@
       resultEl.innerHTML = "";
 
       try {
-        const custRes = await fetch("/api/search-customer", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ phone }),
-        });
-        const custData = await custRes.json();
-        if (!custRes.ok) throw new Error(custData.error?.detail || custData.error || "Search failed");
-
-        const customers = custData.customers || [];
-        if (customers.length === 0) {
-          resultEl.innerHTML = `
-            <div class="card">
-              <h3>No appointment found</h3>
-              <p class="detail">We couldn’t find a booking for this number today.</p>
-              <button class="primary" style="margin-top:18px" onclick="window.open('${BOOKING_URL}', '_blank')">
-                Book an Appointment
-              </button>
-            </div>`;
-          resultEl.classList.add("visible");
-          return;
-        }
-
-        const customer = customers[0];
-        const name = [customer.given_name, customer.family_name].filter(Boolean).join(" ") || "Guest";
-
+        // Search today's appointments by phone across ALL customer profiles
         const bookRes = await fetch("/api/get-todays-bookings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ customerId: customer.id }),
+          body: JSON.stringify({ phone: phone }),
         });
         const bookData = await bookRes.json();
         if (!bookRes.ok) throw new Error(bookData.error?.detail || bookData.error || "Could not load bookings");
 
         const bookings = bookData.bookings || [];
+
         if (bookings.length === 0) {
+          const profiles = bookData.profilesFound || [];
+          let profileNote = "";
+          if (profiles.length > 0) {
+            profileNote = "<p class=\"detail\" style=\"margin-top:8px\">Profiles found: " +
+              profiles.map(p => p.name).join(", ") +
+              "</p><p class=\"detail\">None of these profiles have an appointment today.</p>";
+          }
           resultEl.innerHTML = `
             <div class="card">
-              <h3>Hi ${name}</h3>
-              <p class="detail">No appointment scheduled for today.</p>
+              <h3>No appointment found</h3>
+              <p class="detail">We couldn’t find a booking for this number today.</p>
+              ${profileNote}
               <button class="primary" style="margin-top:18px" onclick="window.open('${BOOKING_URL}', '_blank')">
                 Book an Appointment
               </button>
@@ -234,16 +219,19 @@
           return;
         }
 
+        bookings.sort((a, b) => new Date(a.start_at) - new Date(b.start_at));
+
         let html = "";
         bookings.forEach((b) => {
           const time = formatTime(b.start_at);
           const checkedIn = b.checkedIn;
+          const guest = b.guestName || "Guest";
           html += `
             <div class="card">
               <h3>${time}</h3>
               <p class="detail"><span>Service:</span> ${b.serviceName || "Service"}</p>
               <p class="detail"><span>Nail Tech:</span> ${b.staffName || "Staff"}</p>
-              <p class="detail"><span>Guest:</span> ${name}</p>
+              <p class="detail"><span>Guest:</span> ${guest}</p>
               <span class="badge ${checkedIn ? "" : "waiting"}">${checkedIn ? "Checked in" : "Ready to check in"}</span>
               ${!checkedIn ? `<button class="primary" style="margin-top:16px" onclick="checkIn('${b.id}', ${b.version || 0})">Check In Now</button>` : ""}
             </div>`;
