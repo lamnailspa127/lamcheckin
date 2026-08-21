@@ -20,43 +20,100 @@
       --accent: #111111; --success: #0d9488; --key-bg: #f4f4f4; --key-active: #e0e0e0;
     }
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body {
+      height: 100%;
+      overflow: hidden;
+    }
     body {
       font-family: "SF Pro Display", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      background: var(--bg); color: var(--text); min-height: 100vh;
+      background: var(--bg); color: var(--text);
+      min-height: 100dvh;
+      max-height: 100dvh;
       display: flex; flex-direction: column; align-items: center;
-      padding: 32px 20px 40px; -webkit-font-smoothing: antialiased;
+      padding: 12px 16px 16px;
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
     }
-    .logo { width: 160px; height: auto; margin-bottom: 24px; }
-    h1 { font-size: 26px; font-weight: 600; letter-spacing: 2px; text-transform: uppercase; margin-bottom: 6px; }
-    .subtitle { color: var(--muted); font-size: 15px; margin-bottom: 36px; }
+    .logo {
+      width: 88px;
+      height: auto;
+      margin-bottom: 8px;
+      flex-shrink: 0;
+    }
+    h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 2px;
+      flex-shrink: 0;
+    }
+    .subtitle {
+      color: var(--muted);
+      font-size: 13px;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
     .phone-display {
-      width: 100%; max-width: 340px; background: #fafafa; border: 1px solid var(--border);
-      border-radius: 12px; padding: 20px; font-size: 28px; font-weight: 500; letter-spacing: 3px;
-      text-align: center; min-height: 72px; display: flex; align-items: center; justify-content: center;
-      margin-bottom: 28px; font-variant-numeric: tabular-nums;
+      width: 100%; max-width: 320px;
+      background: #fafafa; border: 1px solid var(--border);
+      border-radius: 12px; padding: 12px 16px;
+      font-size: 22px; font-weight: 500; letter-spacing: 2px;
+      text-align: center; min-height: 52px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 12px; font-variant-numeric: tabular-nums;
+      flex-shrink: 0;
     }
-    .phone-display.empty { color: #ccc; letter-spacing: 1px; font-size: 18px; }
-    .keypad { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; width: 100%; max-width: 340px; margin-bottom: 24px; }
+    .phone-display.empty { color: #ccc; letter-spacing: 1px; font-size: 16px; }
+    .keypad {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      width: 100%;
+      max-width: 320px;
+      margin-bottom: 12px;
+      flex-shrink: 0;
+    }
     .key {
-      aspect-ratio: 1.4; background: var(--key-bg); border: none; border-radius: 14px;
-      font-size: 26px; font-weight: 500; color: var(--text); cursor: pointer;
-      transition: background 0.15s, transform 0.1s; display: flex; align-items: center; justify-content: center; user-select: none;
+      aspect-ratio: 1.55;
+      background: var(--key-bg);
+      border: none;
+      border-radius: 12px;
+      font-size: 22px;
+      font-weight: 500;
+      color: var(--text);
+      cursor: pointer;
+      transition: background 0.15s, transform 0.1s;
+      display: flex; align-items: center; justify-content: center;
+      user-select: none;
     }
     .key:active { background: var(--key-active); transform: scale(0.96); }
-    .key.action { font-size: 15px; font-weight: 600; }
+    .key.action { font-size: 13px; font-weight: 600; }
     .key.clear { background: #f0f0f0; color: #666; }
-    .actions { width: 100%; max-width: 340px; }
+    .actions {
+      width: 100%;
+      max-width: 320px;
+      flex-shrink: 0;
+    }
     button.primary {
-      width: 100%; padding: 18px; font-size: 17px; font-weight: 600; letter-spacing: 0.5px;
-      border: none; border-radius: 12px; background: var(--accent); color: white; cursor: pointer;
+      width: 100%;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      border: none;
+      border-radius: 12px;
+      background: var(--accent);
+      color: white;
+      cursor: pointer;
     }
     button.primary:active { transform: scale(0.98); }
     button.primary:disabled { opacity: 0.35; cursor: not-allowed; }
     button.secondary {
       width: 100%;
-      margin-top: 12px;
-      padding: 16px;
-      font-size: 16px;
+      margin-top: 8px;
+      padding: 12px;
+      font-size: 15px;
       font-weight: 600;
       letter-spacing: 0.3px;
       border: 1.5px solid #111;
@@ -69,29 +126,69 @@
       transform: scale(0.98);
       background: #f5f5f5;
     }
-    .result { width: 100%; max-width: 340px; margin-top: 28px; display: none; }
-    .result.visible { display: block; }
+    #result {
+      width: 100%;
+      max-width: 320px;
+      margin-top: 10px;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      flex: 1;
+      min-height: 0;
+      display: none;
+    }
+    #result.visible { display: block; }
     .card {
-      background: #fafafa; border: 1px solid var(--border); border-radius: 14px;
-      padding: 22px; text-align: left; margin-bottom: 14px;
+      background: #fafafa;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px;
+      margin-bottom: 10px;
     }
-    .card h3 { font-size: 20px; font-weight: 600; margin-bottom: 8px; }
-    .card .detail { font-size: 15px; color: var(--text); margin-bottom: 4px; }
-    .card .detail span { color: var(--muted); }
+    .card h3 { font-size: 17px; margin-bottom: 6px; }
+    .detail { font-size: 13px; color: var(--muted); margin: 3px 0; }
+    .detail span { color: var(--text); font-weight: 500; }
     .badge {
-      display: inline-block; margin-top: 12px; padding: 5px 12px; font-size: 12px;
-      font-weight: 600; border-radius: 20px; background: #e6f7f5; color: var(--success);
+      display: inline-block;
+      margin-top: 8px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      background: #d1fae5;
+      color: #065f46;
     }
-    .badge.waiting { background: #f0f0f0; color: var(--muted); }
+    .badge.waiting { background: #f3f4f6; color: #374151; }
     .message {
-      width: 100%; max-width: 340px; margin-top: 18px; padding: 14px 16px;
-      border-radius: 10px; font-size: 14px; text-align: center; display: none;
+      width: 100%; max-width: 320px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      font-size: 14px;
+      margin-bottom: 8px;
+      display: none;
+      flex-shrink: 0;
     }
-    .message.success { background: #e6f7f5; color: #0f766e; display: block; }
-    .message.error { background: #fef2f2; color: #b91c1c; display: block; }
-    .loading { opacity: 0.55; pointer-events: none; }
-    footer { margin-top: auto; padding-top: 40px; font-size: 12px; color: #bbb; }
+    .message.show { display: block; }
+    .message.success { background: #d1fae5; color: #065f46; }
+    .message.error { background: #fee2e2; color: #991b1b; }
+    footer {
+      margin-top: 8px;
+      font-size: 11px;
+      color: #bbb;
+      flex-shrink: 0;
+    }
+    body.loading { opacity: 0.85; pointer-events: none; }
 
+    /* Slightly roomier on iPad / larger screens */
+    @media (min-height: 800px) {
+      .logo { width: 110px; margin-bottom: 12px; }
+      h1 { font-size: 22px; }
+      .subtitle { margin-bottom: 16px; font-size: 14px; }
+      .phone-display { padding: 16px; font-size: 26px; min-height: 60px; margin-bottom: 16px; }
+      .keypad { gap: 10px; margin-bottom: 16px; }
+      .key { font-size: 24px; }
+      button.primary { padding: 16px; font-size: 16px; }
+      body { padding: 20px 20px 24px; }
+    }
   </style>
 </head>
 <body>
